@@ -108,6 +108,8 @@ EOF;
         $this->log('Running worker...');
         $this->log('PID '.getmypid());
 
+        $this->activateTerminationHandlers();
+
         $counter = 0;
 
         // The worker loop!
@@ -119,6 +121,9 @@ EOF;
             // and restablish the connection when needed. Also, the persistent mode
             // could be disabled for this worker. See issue #4182.
             function () use (&$counter) {
+                // Needed for signal handler to work
+                pcntl_signal_dispatch();
+
                 if (30 == $counter++) {
                     $counter = 0;
 
@@ -126,5 +131,44 @@ EOF;
                 }
             }
         );
+    }
+
+    protected function activateTerminationHandlers()
+    {
+        // Define signal handler function within the object scope to allow it
+        // to access the object's methods, etc.
+        $signalHandler = function ($signal) {
+            switch ($signal) {
+                case SIGINT:
+                    $this->log('Job worker termination requested by user.');
+
+                    exit();
+
+                    break;
+
+                case SIGHUP:
+                    $this->log('Job worker restart requested.');
+
+                    break;
+
+                case SIGTERM:
+                    $this->log('Job worker termination requested.');
+
+                    exit();
+
+                    break;
+            }
+        };
+
+        pcntl_signal(SIGINT, $signalHandler);
+        pcntl_signal(SIGHUP, $signalHandler);
+        pcntl_signal(SIGTERM, $signalHandler);
+
+        // Define shutdown function
+        $shutdownFunction = function () {
+            $this->log('Job worker stopped.');
+        };
+
+        register_shutdown_function($shutdownFunction);
     }
 }
